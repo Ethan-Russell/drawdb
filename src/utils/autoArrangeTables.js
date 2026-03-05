@@ -72,6 +72,7 @@ function buildLayers(componentNodeIds, outgoing, incoming) {
 
   const roots = componentNodeIds.filter((nodeId) => inDegree.get(nodeId) === 0);
   const queue = roots.length > 0 ? [...roots] : [componentNodeIds[0]];
+  const queued = new Set(queue);
   const layerByNode = new Map();
   for (const root of queue) layerByNode.set(root, 0);
 
@@ -85,7 +86,10 @@ function buildLayers(componentNodeIds, outgoing, incoming) {
       if (!layerByNode.has(next) || layerByNode.get(next) < proposedLayer) {
         layerByNode.set(next, proposedLayer);
       }
-      if (!queue.includes(next)) queue.push(next);
+      if (!queued.has(next)) {
+        queue.push(next);
+        queued.add(next);
+      }
     }
   }
 
@@ -287,6 +291,8 @@ export function autoArrangeTables(tables, relationships, options = {}) {
 
   return result;
 }
+
+
 
 
 
