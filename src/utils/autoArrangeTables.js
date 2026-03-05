@@ -267,7 +267,7 @@ export function autoArrangeTables(tables, relationships, options = {}) {
         const tableHeight =
           tableHeaderHeight +
           tableColorStripHeight +
-          table.fields.length * tableFieldHeight;
+          (table.fields?.length ?? 0) * tableFieldHeight;
         result.set(nodeId, {
           x: cursorX + layerIndex * (tableWidth + gapX),
           y: cursorY,
