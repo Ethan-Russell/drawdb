@@ -165,8 +165,10 @@ function buildLayers(componentNodeIds, outgoing, incoming) {
     layerByNode,
   );
 
+  const MAX_SWAP_ITERS = 50;
   let improved = true;
-  while (improved) {
+  let iters = 0;
+  while (improved && iters++ < MAX_SWAP_ITERS) {
     improved = false;
     for (let layerIndex = 0; layerIndex < layers.length; layerIndex++) {
       const layer = layers[layerIndex];
@@ -285,4 +287,6 @@ export function autoArrangeTables(tables, relationships, options = {}) {
 
   return result;
 }
+
+
 
