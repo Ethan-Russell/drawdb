@@ -7,6 +7,7 @@ export function getJsonType(f) {
     return '{ "type" : "object", additionalProperties : true }';
   }
   switch (f.type) {
+    case "MYPRIMETYPE":
     case "INT":
     case "SMALLINT":
     case "BIGINT":
@@ -47,6 +48,9 @@ export function getTypeString(
   baseType = false,
 ) {
   if (dbms === DB.MYSQL) {
+    if (field.type === "MYPRIMETYPE") {
+      return "INT";
+    }
     if (field.type === "UUID") {
       return `VARCHAR(36)`;
     }
@@ -64,6 +68,9 @@ export function getTypeString(
     }
     return field.type;
   } else if (dbms === DB.POSTGRES) {
+    if (field.type === "MYPRIMETYPE") {
+      return "integer";
+    }
     if (field.type === "SMALLINT" && field.increment) {
       return "smallserial";
     }
@@ -130,6 +137,9 @@ export function getTypeString(
         return "NVARCHAR(MAX)";
       case "TEXT":
         return "TEXT";
+      case "MYPRIMETYPE":
+        type = "INT";
+        break;
       default:
         type = field.type;
         break;
@@ -142,6 +152,9 @@ export function getTypeString(
   } else if (dbms === DB.ORACLESQL) {
     let oracleType;
     switch (field.type) {
+      case "MYPRIMETYPE":
+        oracleType = "NUMBER";
+        break;
       case "BIGINT":
         oracleType = "NUMBER";
         break;
@@ -354,6 +367,7 @@ export function jsonToPostgreSQL(obj) {
 
 export function getSQLiteType(field) {
   switch (field.type) {
+    case "MYPRIMETYPE":
     case "INT":
     case "SMALLINT":
     case "BIGINT":

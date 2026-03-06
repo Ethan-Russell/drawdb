@@ -747,6 +747,139 @@ export default function ControlPanel({ title, setTitle, lastSaved }) {
   const toggleDBMLEditor = () => {
     setLayout((prev) => ({ ...prev, dbmlEditor: !prev.dbmlEditor }));
   };
+  const autoArrange = () => {
+    if (layout.readOnly || tables.length === 0) return;
+
+    const nodes = tables.map((table) => ({
+      id: table.id,
+      x: table.x,
+      y: table.y,
+      locked: table.locked,
+    }));
+
+    const idToIndex = new Map(nodes.map((n, i) => [n.id, i]));
+    const edges = relationships
+      .map((r) => {
+        const s = idToIndex.get(r.startTableId);
+        const e = idToIndex.get(r.endTableId);
+        if (s === undefined || e === undefined || s === e) return null;
+        return { source: s, target: e };
+      })
+      .filter(Boolean);
+
+    if (edges.length === 0) {
+      // Simple grid layout when there are no relationships
+      const cols = Math.ceil(Math.sqrt(nodes.length));
+      const spacingX = settings.tableWidth + 80;
+      const spacingY = 160;
+      nodes.forEach((node, index) => {
+        if (node.locked) return;
+        const col = index % cols;
+        const row = Math.floor(index / cols);
+        node.x = col * spacingX;
+        node.y = row * spacingY;
+      });
+    } else {
+      // Fruchterman–Reingold style force-directed layout on a copy of positions
+      const area = 2000 * 2000;
+      const n = nodes.length;
+      const k = Math.sqrt(area / Math.max(1, n));
+      const iterations = 200;
+      let temperature = 400;
+
+      for (let iter = 0; iter < iterations; iter++) {
+        const disp = nodes.map(() => ({ x: 0, y: 0 }));
+
+        // Repulsive forces
+        for (let i = 0; i < n; i++) {
+          for (let j = i + 1; j < n; j++) {
+            const dx = nodes[i].x - nodes[j].x;
+            const dy = nodes[i].y - nodes[j].y;
+            const dist = Math.max(1, Math.hypot(dx, dy));
+            const force = (k * k) / dist;
+            const fx = (dx / dist) * force;
+            const fy = (dy / dist) * force;
+            disp[i].x += fx;
+            disp[i].y += fy;
+            disp[j].x -= fx;
+            disp[j].y -= fy;
+          }
+        }
+
+        // Attractive forces
+        for (const edge of edges) {
+          const source = nodes[edge.source];
+          const target = nodes[edge.target];
+          const dx = source.x - target.x;
+          const dy = source.y - target.y;
+          const dist = Math.max(1, Math.hypot(dx, dy));
+          const force = (dist * dist) / k;
+          const fx = (dx / dist) * force;
+          const fy = (dy / dist) * force;
+          disp[edge.source].x -= fx;
+          disp[edge.source].y -= fy;
+          disp[edge.target].x += fx;
+          disp[edge.target].y += fy;
+        }
+
+        // Apply displacements with cooling
+        for (let i = 0; i < n; i++) {
+          if (nodes[i].locked) continue;
+          const dx = disp[i].x;
+          const dy = disp[i].y;
+          const dist = Math.max(1, Math.hypot(dx, dy));
+          const limited = Math.min(dist, temperature);
+          if (dist > 0) {
+            nodes[i].x += (dx / dist) * limited;
+            nodes[i].y += (dy / dist) * limited;
+          }
+        }
+
+        temperature *= 0.95;
+        if (temperature < 5) break;
+      }
+
+      // Normalize to start near origin
+      let minX = Infinity;
+      let minY = Infinity;
+      nodes.forEach((n) => {
+        minX = Math.min(minX, n.x);
+        minY = Math.min(minY, n.y);
+      });
+      nodes.forEach((n) => {
+        if (n.locked) return;
+        n.x -= minX;
+        n.y -= minY;
+      });
+    }
+
+    // Build undo entry and apply updates
+    const elements = tables.map((table) => {
+      const node = nodes.find((n) => n.id === table.id);
+      return {
+        id: table.id,
+        type: ObjectType.TABLE,
+        undo: { x: table.x, y: table.y },
+        redo: { x: node?.x ?? table.x, y: node?.y ?? table.y },
+      };
+    });
+
+    setUndoStack((prev) => [
+      ...prev,
+      {
+        action: Action.MOVE,
+        bulk: true,
+        message: t("auto_arrange"),
+        elements,
+      },
+    ]);
+    setRedoStack([]);
+
+    elements.forEach((el) => {
+      const { x, y } = el.redo;
+      updateTable(el.id, { x, y });
+    });
+  };
   const save = () => setSaveState(State.SAVING);
   const recentlyOpenedDiagrams = useLiveQuery(() =>
     db.diagrams.orderBy("lastModified").reverse().limit(10).toArray(),
@@ -1464,6 +1597,10 @@ export default function ControlPanel({ title, setTitle, lastSaved }) {
         ),
         function: fullscreen ? exitFullscreen : enterFullscreen,
       },
+      auto_arrange: {
+        function: autoArrange,
+        disabled: layout.readOnly || tables.length === 0,
+      },
     },
     settings: {
       show_timeline: {
@@ -1560,6 +1697,7 @@ export default function ControlPanel({ title, setTitle, lastSaved }) {
   });
   useHotkeys("mod+alt+w", fitWindow, { preventDefault: true });
   useHotkeys("alt+e", toggleDBMLEditor, { preventDefault: true });
+  useHotkeys("mod+shift+a", autoArrange, { preventDefault: true });
 
   return (
     <>
@@ -1684,6 +1822,16 @@ export default function ControlPanel({ title, setTitle, lastSaved }) {
               }
             >
               <i className="fa-solid fa-magnifying-glass-plus" />
+            </button>
+          </Tooltip>
+          <Divider layout="vertical" margin="8px" />
+          <Tooltip content={t("auto_arrange")} position="bottom">
+            <button
+              className="py-1 px-2 hover-2 rounded-sm flex items-center disabled:opacity-50"
+              onClick={autoArrange}
+              disabled={layout.readOnly || tables.length === 0}
+            >
+              <i className="fa-solid fa-object-group" />
             </button>
           </Tooltip>
           <Divider layout="vertical" margin="8px" />
